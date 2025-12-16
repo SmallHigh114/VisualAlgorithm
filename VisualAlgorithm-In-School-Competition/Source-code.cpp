@@ -39,12 +39,53 @@
 
 using namespace std;
 
+/* 筛选颜色 */
+cv::Mat chooseRed(const cv::Mat& img) {
+    cv::Mat hsv;
+    cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+
+    //// 视频测试颜色
+    //cv::Scalar lower1(0, 100, 100);
+    //cv::Scalar upper1(10, 255, 255);
+    //// 实际测试颜色
+    //cv::Scalar lower2(0, 0, 175);
+    //cv::Scalar upper2(180, 40, 255);
+
+    cv::Scalar lower1(0, 100, 100);
+    cv::Scalar upper1(10, 255, 255);
+    cv::Scalar lower2(170, 100, 100);
+    cv::Scalar upper2(180, 255, 255);
+
+    cv::Mat mask1, mask2, mask;
+    cv::inRange(hsv, lower1, upper1, mask1);
+    cv::inRange(hsv, lower2, upper2, mask2);
+    cv::bitwise_or(mask1, mask2, mask);
+    return mask;
+}
+
+cv::Mat chooseBlue(const cv::Mat& img) {
+    cv::Mat hsv;
+    cv::cvtColor(img, hsv, cv::COLOR_BGR2HSV);
+
+    //cv::Scalar lower(90, 100, 150);
+    //cv::Scalar upper(135, 255, 255);
+
+    cv::Scalar lower(95, 100, 160);
+    cv::Scalar upper(135, 255, 255);
+
+    cv::Mat mask;
+    cv::inRange(hsv, lower, upper, mask);
+
+    return mask;
+}
+
 /* 颜色选择 */
 enum LightColor {
     UNKNOWN_COLOR = 0,
     RED = 1,
     BLUE = 2,
 };
+
 /* 灯条结构体 */
 struct LightBar {
     cv::RotatedRect rect; // 旋转矩形
@@ -64,6 +105,7 @@ struct LightBar {
         }
     }
 };
+
 /* 装甲板结构体 */
 struct ArmorPlate {
     LightBar leftBar; // 左灯条
@@ -84,15 +126,58 @@ struct ArmorPlate {
     }
 };
 
+// 判断装甲板的四个顶点
+void getArmorVertices(const ArmorPlate& armor,
+    cv::Point2f vertices[4]) {
+    const LightBar& left = armor.leftBar;
+    const LightBar& right = armor.rightBar;
+
+    cv::Point2f leftVertices[4], rightVertices[4];
+    left.rect.points(leftVertices);
+    right.rect.points(rightVertices);
+
+    // 找到左灯条最右侧的两个点
+    std::vector<cv::Point2f> leftPoints(leftVertices, leftVertices + 4);
+    std::sort(leftPoints.begin(), leftPoints.end(),
+        [](const cv::Point2f& a, const cv::Point2f& b) {
+            return a.x < b.x;
+        });
+
+    // 找到右灯条最左侧的两个点
+    std::vector<cv::Point2f> rightPoints(rightVertices, rightVertices + 4);
+    std::sort(rightPoints.begin(), rightPoints.end(),
+        [](const cv::Point2f& a, const cv::Point2f& b) {
+            return a.x < b.x;
+        });
+
+    if (leftPoints[2].y < leftPoints[3].y) {
+        vertices[0] = leftPoints[2]; // 左上
+        vertices[3] = leftPoints[3]; // 左下
+    }
+    else {
+        vertices[0] = leftPoints[3]; // 左上
+        vertices[3] = leftPoints[2]; // 左下
+    }
+
+    if (rightPoints[0].y < rightPoints[1].y) {
+        vertices[1] = rightPoints[0]; // 右上
+        vertices[2] = rightPoints[1]; // 右下
+    }
+    else {
+        vertices[1] = rightPoints[1]; // 右上
+        vertices[2] = rightPoints[0]; // 右下
+    }
+}
+
 int main() {
     // 打开摄像头
     //cv::VideoCapture cap(0);
 
     //测试视频 蓝色装甲板
-    //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
+    cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
 
     //测试视频 红色装甲板
-    cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RedArmorPlus.mp4");
+    //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RedArmorPlus.mp4");
     //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RED.mp4");
 
     // 检查摄像头
@@ -116,7 +201,8 @@ int main() {
         }
 
         /* 图像预处理 */
-        image = chooseRed(frame);
+        cv::Mat originalClone = frame.clone();
+        image = chooseBlue(originalClone);
         // 形态学处理
         cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
         // 闭运算
@@ -127,13 +213,12 @@ int main() {
         // 二值化
         cv::threshold(result_Copy, result_Copy, 128, 255, cv::THRESH_BINARY);
 
-
-
         // 从二值图提取轮廓
         vector<vector<cv::Point>> contours;
         cv::findContours(result_Copy, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
        
         vector<LightBar> lightBars;
+
         /* 灯条判断 */
         // 遍历轮廓
         for (const auto& contour : contours) {
@@ -174,37 +259,21 @@ int main() {
                 bRect.x + bRect.width <= frame.cols &&
                 bRect.y + bRect.height <= frame.rows) {
 
-                // 提取ROI区域
+                // 提取ROI区域 
                 cv::Mat roi = frame(bRect);
 
-                // 计算红色和蓝色通道的像素值总和
                 int sum_r = 0, sum_b = 0, sum_g = 0;
-                int pixelCount = 0;
-
-                for (int i = 0; i < roi.rows; i++) {
-                    for (int j = 0; j < roi.cols; j++) {
+                for (int i = 0; i < roi.rows; i++) 
+                {
+                    for (int j = 0; j < roi.cols; j++) 
+                    {
                         cv::Vec3b pixel = roi.at<cv::Vec3b>(i, j);
-                        sum_b += pixel[0];  // 蓝色通道
-                        sum_g += pixel[1];  // 绿色通道
-                        sum_r += pixel[2];  // 红色通道
-                        pixelCount++;
+                        sum_r += pixel[2];
+                        sum_b += pixel[0];
                     }
                 }
-
-                // 计算平均值
-                float avg_r = static_cast<float>(sum_r) / pixelCount;
-                float avg_b = static_cast<float>(sum_b) / pixelCount;
-
-                // 判断颜色
-                if (avg_r > avg_b * 1.3 && avg_r > 80) {
-                    lightColor = RED;
-                }
-                else if (avg_b > avg_r * 1.3 && avg_b > 80) {
-                    lightColor = BLUE;
-                }
-                else {
-                    continue;
-                }
+                lightColor = sum_r > sum_b ? RED : BLUE;
+                //cout << lightColor << endl;
             }
 
             // 获取四个顶点
@@ -219,13 +288,9 @@ int main() {
             */
             // 保留合理大小的轮廓
             LightBar lightBar(rect, lightColor);
-            lightBars.push_back(LightBar(rect));
+            lightBars.push_back(lightBar);
             }
         /*cout << "过滤后剩余 " << validContours.size() << " 个轮廓" << endl;*/
-
-
-
-
 
         /* 装甲板判断 */
         vector<ArmorPlate> armorPlates;
@@ -260,8 +325,35 @@ int main() {
                 cv::Point2f centerI = lightBars[i].center;
                 cv::Point2f centerJ = lightBars[j].center;
                 cv::Point2f cIJ = centerJ - centerI;
-                
 
+                float dx_rect = abs(centerI.x - centerJ.x);
+                float dy_rect = abs(centerI.y - centerJ.y);
+
+                float minX = (centerI.x < centerJ.x ? centerI.x : centerJ.x) - dx_rect * 0.5f;
+                float maxX = (centerI.x > centerJ.x ? centerI.x : centerJ.x) + dx_rect * 0.5f;
+                float minY = (centerI.y < centerJ.y ? centerI.y : centerJ.y) - dy_rect * 0.5f;
+                float maxY = (centerI.y > centerJ.y ? centerI.y : centerJ.y) + dy_rect * 0.5f;
+
+                bool light3 = false;
+                for (int k = 0; k < lightBars.size(); k++)
+                {
+                    if (k == i || k == j)
+                    {
+                        continue;
+                    }
+                    cv::Point2f otherCenter = lightBars[k].center;
+                    if (otherCenter.x >= minX && otherCenter.x <= maxX &&
+                        otherCenter.y >= minY && otherCenter.y <= maxY)
+                    {
+                        light3 = true;
+                        break;
+                    }
+                }
+
+                if (light3) {
+                    continue;
+                }
+                
 
                 // 5.高度差 俩灯条y坐标差
                 float centerYi = lightBars[i].center.y;
@@ -299,17 +391,26 @@ int main() {
             for (int j = 0; j < 4; j++) {
                 cv::line(frame, vertices2[j], vertices2[(j + 1) % 4], cv::Scalar(0, 255, 0), 2);
             }
+
             // 绘制装甲板外框
-            cv::Point2f topLeft = vertices1[0];
-            cv::Point2f topRight = vertices2[1];
-            cv::Point2f bottomRight = vertices2[2];
-            cv::Point2f bottomLeft = vertices1[3];
+            //cv::Point2f topLeft = vertices1[0];
+            //cv::Point2f topRight = vertices2[1];
+            //cv::Point2f bottomRight = vertices2[2];
+            //cv::Point2f bottomLeft = vertices1[3];
 
-            cv::line(frame, topLeft, topRight, cv::Scalar(255, 0, 0), 2);
-            cv::line(frame, topRight, bottomRight, cv::Scalar(255, 0, 0), 2);
-            cv::line(frame, bottomRight, bottomLeft, cv::Scalar(255, 0, 0), 2);
-            cv::line(frame, bottomLeft, topLeft, cv::Scalar(255, 0, 0), 2);
+            //cv::line(frame, topLeft, topRight, cv::Scalar(255, 0, 0), 2);
+            //cv::line(frame, topRight, bottomRight, cv::Scalar(255, 0, 0), 2);
+            //cv::line(frame, bottomRight, bottomLeft, cv::Scalar(255, 0, 0), 2);
+            //cv::line(frame, bottomLeft, topLeft, cv::Scalar(255, 0, 0), 2);
 
+            cv::Point2f armorVertices[4];
+            getArmorVertices(armorPlates[i], armorVertices);
+            for (int j = 0; j < 4; j++) {
+                cv::line(frame, armorVertices[j], armorVertices[(j + 1) % 4],
+                    cv::Scalar(255, 0, 0), 2);
+            }
+
+            // 显示装甲板数量
             std::string stats = "Armors: " + std::to_string(armorPlates.size());    
             cv::putText(frame, stats, cv::Point(10, 30),
                 cv::FONT_HERSHEY_SIMPLEX, 1.0,
@@ -319,7 +420,7 @@ int main() {
             string colorText = (armorPlates[i].color == RED) ? "COLOR:RED" : "COLOR:BLUE";
             cv::putText(frame, colorText, cv::Point2f(10, 60),
                 cv::FONT_HERSHEY_SIMPLEX, 1.0,
-                (armorPlates[i].color == RED) ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 255), 2);
+                (armorPlates[i].color == RED) ? cv::Scalar(0, 0, 255) : cv::Scalar(255, 0, 0), 2);
         }
 
         cv::resize(result, result, cv::Size(640, 640));
