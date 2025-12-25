@@ -35,6 +35,9 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <vector>
+#include <judgeInterface.hpp>
+
+#include "HikCamera.hpp"
 
 using namespace std;
 
@@ -126,8 +129,7 @@ struct ArmorPlate {
 };
 
 // 判断装甲板的四个顶点
-void getArmorVertices(const ArmorPlate& armor,
-    cv::Point2f vertices[4]) {
+void getArmorVertices(const ArmorPlate& armor, cv::Point2f vertices[4]) {
     const LightBar& left = armor.leftBar;
     const LightBar& right = armor.rightBar;
 
@@ -135,64 +137,119 @@ void getArmorVertices(const ArmorPlate& armor,
     left.rect.points(leftVertices);
     right.rect.points(rightVertices);
 
-    // 找到左灯条最右侧的两个点
-    std::vector<cv::Point2f> leftPoints(leftVertices, leftVertices + 4);
-    std::sort(leftPoints.begin(), leftPoints.end(),
+    // 找到左灯条最左侧的两个点
+    vector<cv::Point2f> leftPoints(leftVertices, leftVertices + 4);
+    sort(leftPoints.begin(), leftPoints.end(), // 迭代器   
         [](const cv::Point2f& a, const cv::Point2f& b) {
             return a.x < b.x;
         });
 
-    // 找到右灯条最左侧的两个点
-    std::vector<cv::Point2f> rightPoints(rightVertices, rightVertices + 4);
-    std::sort(rightPoints.begin(), rightPoints.end(),
+    // 找到右灯条最右侧的两个点
+    vector<cv::Point2f> rightPoints(rightVertices, rightVertices + 4);
+    sort(rightPoints.begin(), rightPoints.end(),
         [](const cv::Point2f& a, const cv::Point2f& b) {
             return a.x < b.x;
         });
 
-    if (leftPoints[2].y < leftPoints[3].y) {
-        vertices[0] = leftPoints[2]; // 左上
-        vertices[3] = leftPoints[3]; // 左下
-    }
-    else {
-        vertices[0] = leftPoints[3]; // 左上
-        vertices[3] = leftPoints[2]; // 左下
-    }
+    // 左灯条取x最小的两个点
+    // 右灯条取x最大的两个点
+    vector<cv::Point2f> leftOuter(2);
+    vector<cv::Point2f> rightOuter(2);
 
-    if (rightPoints[0].y < rightPoints[1].y) {
-        vertices[1] = rightPoints[0]; // 右上
-        vertices[2] = rightPoints[1]; // 右下
-    }
-    else {
-        vertices[1] = rightPoints[1]; // 右上
-        vertices[2] = rightPoints[0]; // 右下
-    }
+    // 左灯条左侧两个点
+    leftOuter[0] = leftPoints[0];
+    leftOuter[1] = leftPoints[1];
+
+    // 右灯条右侧两个点
+    rightOuter[0] = rightPoints[2];
+    rightOuter[1] = rightPoints[3];
+
+    // 在每组内按y坐标排序（从上到下）
+    sort(leftOuter.begin(), leftOuter.end(),
+        [](const cv::Point2f& a, const cv::Point2f& b) {
+            return a.y < b.y;
+        });
+
+    sort(rightOuter.begin(), rightOuter.end(),
+        [](const cv::Point2f& a, const cv::Point2f& b) {
+            return a.y < b.y;
+        });
+
+    vertices[0] = leftOuter[0];    // 左上
+    vertices[1] = rightOuter[0];   // 右上
+    vertices[2] = rightOuter[1];   // 右下
+    vertices[3] = leftOuter[1];    // 左下
 }
 
+
+
 int main() {
-    // 打开摄像头
+    JudgeInterface judge;
+
+    //HikCamera camera(0);
+
     //cv::VideoCapture cap(0);
 
     //测试视频 蓝色装甲板
-    cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
+    cv::VideoCapture camera("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
 
     //测试视频 红色装甲板
     //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RedArmorPlus.mp4");
     //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RED.mp4");
 
     // 检查摄像头
-    if (!cap.isOpened()) {
+    if (!camera.isOpened()) {
         cerr << "无法打开摄像头！" << endl;
         return -1;
     }
 
     //定义变量
+    /* 图像预处理 */
     cv::Mat frame;
     cv::Mat image;
     cv::Mat result;
+    cv::Mat originalClone;
+    cv::Mat originalDrawing;
+    cv::Mat kernel;
+    cv::Mat result_Copy;
+    /* 灯条判断 */
+    cv::RotatedRect rect;
+    float height;
+    float width;
+    float temp;
+    double area;
+    float angle;
+    float aspectRatio;
+    cv::Point2f center;
+    /* 装甲板判断 */
+    float lengthRatio;
+    float dx;
+    float dy;
+    float Langle;
+    cv::Point2f centerI;
+    cv::Point2f centerJ;
+    cv::Point2f cIJ;
+    float dx_rect;
+    float dy_rect;
+    float minX;
+    float minY;
+    float maxX;
+    float maxY;
+    float centerYi;
+    float centerYj;
+    float heightDiff;
+    float aveLength;
+    cv::Point2f otherCenter;
+    /* 绘制装甲板 */
+    cv::Point2f vertices1[4]; // 绘制左灯条
+    cv::Point2f vertices2[4]; // 绘制右灯条
+    cv::Point2f armorVertices[4];
+    vector<cv::Point2f> armor_corners;
+    cv::RotatedRect target_rect;
 
     while (true) {
 
-        cap >> frame;
+        camera >> frame;
 
         if (frame.empty()) {
             std::cerr << "读取帧失败" << std::endl;
@@ -200,15 +257,16 @@ int main() {
         }
 
         /* 图像预处理 */
-        cv::Mat originalClone = frame.clone();
+        originalClone = frame.clone();
+        originalDrawing = frame.clone();
         image = chooseBlue(originalClone);
         // 形态学处理
-        cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+        kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
         // 闭运算
         //cv::morphologyEx(image, result, cv::MORPH_CLOSE, kernel);
         // 膨胀
         cv::dilate(image, result, kernel);
-        cv::Mat result_Copy = result.clone();
+        result_Copy = result.clone();
         // 二值化
         cv::threshold(result_Copy, result_Copy, 128, 255, cv::THRESH_BINARY);
 
@@ -223,29 +281,29 @@ int main() {
         for (const auto& contour : contours) {
             if (contour.size() < 5) continue;
             // 轮廓面积
-            double area = cv::contourArea(contour);
+            area = cv::contourArea(contour);
             if (area < 1e-5) continue;
             // 最小旋转矩形
-            cv::RotatedRect rect = cv::minAreaRect(contour);
+            rect = cv::minAreaRect(contour);
             // 确保height为长边
-            float height = rect.size.height;   //高
-            float width = rect.size.width;    //宽
+            height = rect.size.height;   //高
+            width = rect.size.width;    //宽
             if (height < width)
             {
-                float temp = height;
+                temp = height;
                 height = width;
                 width = temp;
             }
 
-            cv::Point2f center = rect.center;
+            center = rect.center;
 
-            float angle=rect.angle;
+            angle=rect.angle;
             angle = abs(angle);
 
             if (angle > 90) angle = 180 - angle;
 
             // 长宽比
-            float aspectRatio = height / width;
+            aspectRatio = height / width;
             if (aspectRatio > 15.0 || aspectRatio < 2.0)
             {
                 continue;
@@ -293,7 +351,7 @@ int main() {
 
         /* 装甲板判断 */
         vector<ArmorPlate> armorPlates;
-        // size_t 无符号，与 size() 匹配，无警告
+        // size_t 无符号，与 size() 匹配
         for (size_t i = 0; i < lightBars.size(); i++) {
             for (size_t j = i + 1; j < lightBars.size(); j++) {
                 // 1.判断俩灯条是否平行
@@ -302,16 +360,16 @@ int main() {
                     continue;
                 }
                 // 2.长度比较
-                float lengthRatio = max(lightBars[i].length, lightBars[j].length) / min(lightBars[i].length, lightBars[j].length);
+                lengthRatio = max(lightBars[i].length, lightBars[j].length) / min(lightBars[i].length, lightBars[j].length);
                 if (lengthRatio > 1.2) {
                     continue;
                 }
                 // 3.中点连线倾角小于35°
                 /*两个点的坐标差，然后使用反正切函数atan2得到角度*/
-                float dx = lightBars[i].center.x - lightBars[j].center.x;
-                float dy = lightBars[i].center.y - lightBars[j].center.y;
+                dx = lightBars[i].center.x - lightBars[j].center.x;
+                dy = lightBars[i].center.y - lightBars[j].center.y;
 
-                float Langle = std::atan2(dy, dx) * 180.0 / CV_PI;
+                Langle = std::atan2(dy, dx) * 180.0 / CV_PI;
 
                 // 取绝对值，转换到0-90度范围
                 Langle = std::abs(Langle);
@@ -321,17 +379,17 @@ int main() {
                     continue;
                 }
                 // 4.装甲板俩灯条之间不会出现第三个灯条
-                cv::Point2f centerI = lightBars[i].center;
-                cv::Point2f centerJ = lightBars[j].center;
-                cv::Point2f cIJ = centerJ - centerI;
+                centerI = lightBars[i].center;
+                centerJ = lightBars[j].center;
+                cIJ = centerJ - centerI;
 
-                float dx_rect = abs(centerI.x - centerJ.x);
-                float dy_rect = abs(centerI.y - centerJ.y);
+                dx_rect = abs(centerI.x - centerJ.x);
+                dy_rect = abs(centerI.y - centerJ.y);
 
-                float minX = (centerI.x < centerJ.x ? centerI.x : centerJ.x) - dx_rect * 0.5f;
-                float maxX = (centerI.x > centerJ.x ? centerI.x : centerJ.x) + dx_rect * 0.5f;
-                float minY = (centerI.y < centerJ.y ? centerI.y : centerJ.y) - dy_rect * 0.5f;
-                float maxY = (centerI.y > centerJ.y ? centerI.y : centerJ.y) + dy_rect * 0.5f;
+                minX = (centerI.x < centerJ.x ? centerI.x : centerJ.x) - dx_rect * 0.5f;
+                maxX = (centerI.x > centerJ.x ? centerI.x : centerJ.x) + dx_rect * 0.5f;
+                minY = (centerI.y < centerJ.y ? centerI.y : centerJ.y) - dy_rect * 0.5f;
+                maxY = (centerI.y > centerJ.y ? centerI.y : centerJ.y) + dy_rect * 0.5f;
 
                 bool light3 = false;
                 for (int k = 0; k < lightBars.size(); k++)
@@ -340,7 +398,7 @@ int main() {
                     {
                         continue;
                     }
-                    cv::Point2f otherCenter = lightBars[k].center;
+                    otherCenter = lightBars[k].center;
                     if (otherCenter.x >= minX && otherCenter.x <= maxX &&
                         otherCenter.y >= minY && otherCenter.y <= maxY)
                     {
@@ -352,14 +410,12 @@ int main() {
                 if (light3) {
                     continue;
                 }
-                
-
                 // 5.高度差 俩灯条y坐标差
-                float centerYi = lightBars[i].center.y;
-                float centerYj = lightBars[j].center.y;
-                float heightDiff = abs(centerYi - centerYj);
+                centerYi = lightBars[i].center.y;
+                centerYj = lightBars[j].center.y;
+                heightDiff = abs(centerYi - centerYj);
 
-                float aveLength = (lightBars[i].rect.size.height + lightBars[j].rect.size.height) / 2;
+                aveLength = (lightBars[i].rect.size.height + lightBars[j].rect.size.height) / 2;
                 if (heightDiff > aveLength * 0.5) {
                     continue;
                 }
@@ -373,70 +429,59 @@ int main() {
                 armorPlates.push_back(ArmorPlate(leftBar, rightBar));
             }
         }
-
+        vector<cv::Point2f> armor_corners;
         /* 绘制装甲板 */
         for (size_t i = 0; i < armorPlates.size(); i++)
         {
             // 绘制左侧灯条
-            cv::Point2f vertices1[4];
             armorPlates[i].leftBar.rect.points(vertices1);
             for (int j = 0; j < 4; j++) {
-                cv::line(frame, vertices1[j], vertices1[(j + 1) % 4], cv::Scalar(0, 255, 0), 2);
+                cv::line(originalDrawing, vertices1[j], vertices1[(j + 1) % 4], cv::Scalar(0, 255, 0), 2);
             }
 
             // 绘制右侧灯条
-            cv::Point2f vertices2[4];
             armorPlates[i].rightBar.rect.points(vertices2);
             for (int j = 0; j < 4; j++) {
-                cv::line(frame, vertices2[j], vertices2[(j + 1) % 4], cv::Scalar(0, 255, 0), 2);
+                cv::line(originalDrawing, vertices2[j], vertices2[(j + 1) % 4], cv::Scalar(0, 255, 0), 2);
             }
 
-            // 绘制装甲板外框
-            //cv::Point2f topLeft = vertices1[0];
-            //cv::Point2f topRight = vertices2[1];
-            //cv::Point2f bottomRight = vertices2[2];
-            //cv::Point2f bottomLeft = vertices1[3];
-
-            //cv::line(frame, topLeft, topRight, cv::Scalar(255, 0, 0), 2);
-            //cv::line(frame, topRight, bottomRight, cv::Scalar(255, 0, 0), 2);
-            //cv::line(frame, bottomRight, bottomLeft, cv::Scalar(255, 0, 0), 2);
-            //cv::line(frame, bottomLeft, topLeft, cv::Scalar(255, 0, 0), 2);
-
-            cv::Point2f armorVertices[4];
             getArmorVertices(armorPlates[i], armorVertices);
             for (int j = 0; j < 4; j++) {
-                cv::line(frame, armorVertices[j], armorVertices[(j + 1) % 4],
-                    cv::Scalar(255, 0, 0), 2);
+                cv::line(originalDrawing, armorVertices[j], armorVertices[(j + 1) % 4], cv::Scalar(255, 0, 0), 2);
             }
 
             // 显示装甲板数量
-            std::string stats = "Armors: " + std::to_string(armorPlates.size());    
-            cv::putText(frame, stats, cv::Point(10, 30),
+            string stats = "Armors: " + std::to_string(armorPlates.size());    
+            cv::putText(originalDrawing, stats, cv::Point(10, 30),
                 cv::FONT_HERSHEY_SIMPLEX, 1.0,
                 cv::Scalar(0, 255, 255), 2);
 
             // 标记装甲板颜色
             string colorText = (armorPlates[i].color == RED) ? "COLOR:RED" : "COLOR:BLUE";
-            cv::putText(frame, colorText, cv::Point2f(10, 60),
+            cv::putText(originalDrawing, colorText, cv::Point2f(10, 60),
                 cv::FONT_HERSHEY_SIMPLEX, 1.0,
                 (armorPlates[i].color == RED) ? cv::Scalar(0, 0, 255) : cv::Scalar(255, 0, 0), 2);
+
+            vector<cv::Point2f> armor_corners(armorVertices, armorVertices + 4);
+            target_rect = cv::minAreaRect(armor_corners);
+
         }
 
         cv::resize(result, result, cv::Size(640, 640));
-        cv::resize(frame, frame, cv::Size(640, 640));
-        cv::imshow("图像处理", result);
-        cv::imshow("检测结果", frame);
+        cv::resize(originalDrawing, originalDrawing, cv::Size(640, 640));
+        //cv::imshow("图像处理", result);
+        //cv::imshow("检测结果", originalDrawing);
 
+        judge.update(frame, target_rect, 0);
+
+        //char c = static_cast<char>(cv::waitKey(1));
         // 按 ESC 退出
-        char c = (char)cv::waitKey(1);
-        if (c == 27) {
+        if (cv::waitKey(1) == 27) {
             break;
         }
     }
 
-    // 释放资源
-    cap.release();
-    cv::destroyAllWindows();
+    judge.close();
 
     return 0;
 }

@@ -21,9 +21,15 @@
     <ClCompile Include="Function.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="HikCamera.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="head.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="HikCamera.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
