@@ -94,7 +94,7 @@ kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 // Size(width, height) 参数说明：
 // - width: 内核宽度（列数）
 // - height: 内核高度（行数）
-// - 3x3 是最常用的尺寸
+// - 3x3 是最常用的尺寸 \n
 
 11.cv::dilate() 膨胀操作
 
