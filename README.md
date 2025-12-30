@@ -98,6 +98,63 @@ kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
 11.cv::dilate() 膨胀操作
 
+函数原型：
+void dilate(
+    InputArray src,      // 输入图像（支持多通道）
+    OutputArray dst,     // 输出图像
+    InputArray kernel,   // 结构元素（内核）
+    Point anchor = Point(-1,-1),  // 锚点，默认中心
+    int iterations = 1,           // 迭代次数
+    int borderType = BORDER_CONSTANT,  // 边界类型
+    const Scalar& borderValue = morphologyDefaultBorderValue()  // 边界值
+);
+
+cv::dilate(image, result, kernel);
+             ↑       ↑       ↑
+            输入    输出     内核
+
+12.cv::threshold 二值化
+
+函数原型：
+double threshold(
+    InputArray src,       // 输入图像（单通道）
+    OutputArray dst,      // 输出图像
+    double thresh,        // 阈值
+    double maxval,        // 最大值
+    int type              // 阈值类型
+);
+
+cv::threshold(result_Copy, result_Copy, 128, 255, cv::THRESH_BINARY);
+                   ↑             ↑       ↑    ↑          ↑
+                  输入          输出    阈值 最大值       类型
+灰度值分布：
+0 ─── 128 ─── 255
+黑       灰       白
+
+13.vector
+外层：vector - 存储所有轮廓
+内层：vector<cv::Point> - 存储单个轮廓的点
+
+std::vector<std::vector<cv::Point>> contours;
+// 可以理解为：
+// contours = [
+//     [Point, Point, Point, ...],  // 第1个轮廓
+//     [Point, Point, Point, ...],  // 第2个轮廓  
+//     [Point, Point, Point, ...],  // 第3个轮廓
+//     ...
+// ]
+
+cv::findContours()
+
+
+
+
+
+
+
+
+
+
 
 
 
