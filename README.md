@@ -1,1 +1,1 @@
-# VisualAlgorithm-In-School-Competition
+# VisualAlgorithm
