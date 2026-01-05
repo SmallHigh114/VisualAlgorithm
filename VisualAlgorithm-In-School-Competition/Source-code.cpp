@@ -33,7 +33,7 @@
 
 */
 #include <opencv2/opencv.hpp>
-#include <iostream>
+#include <iostream> 
 #include <vector>
 #include <judgeInterface.hpp>
 
@@ -81,7 +81,7 @@ cv::Mat chooseBlue(const cv::Mat& img) {
     return mask;
 }
 
-/* 颜色选择 */
+/* 颜色 */
 enum LightColor {
     UNKNOWN_COLOR = 0,
     RED = 1,
@@ -96,7 +96,6 @@ struct LightBar {
     float angle;          // 灯条角度
     LightColor color;     // 灯条颜色
     // 构造灯条函数
-    LightBar() : length(0), angle(0), color(UNKNOWN_COLOR) {} // 初始化
     LightBar(const cv::RotatedRect& r, LightColor c = UNKNOWN_COLOR) : rect(r), color(c) {
         center = r.center;
         length = max(r.size.width, r.size.height); // 取最长的为灯条长边
@@ -105,7 +104,7 @@ struct LightBar {
         if (r.size.width > r.size.height) {
             angle += 90;
         }
-    }
+    }       
 };
 
 /* 装甲板结构体 */
@@ -130,55 +129,38 @@ struct ArmorPlate {
 
 // 判断装甲板的四个顶点
 void getArmorVertices(const ArmorPlate& armor, cv::Point2f vertices[4]) {
-    const LightBar& left = armor.leftBar;
-    const LightBar& right = armor.rightBar;
+    // 存入灯条4点
+    cv::Point2f lv[4], rv[4];
+    armor.leftBar.rect.points(lv);
+    armor.rightBar.rect.points(rv);
+    // 装甲板左侧2点
+    vector<pair<float, cv::Point2f>> leftDist;
+    for (int i = 0; i < 4; i++) {
+        float d = cv::norm(lv[i] - armor.rightBar.rect.center);
+        leftDist.emplace_back(d, lv[i]);
+    }
+    sort(leftDist.begin(), leftDist.end(),
+        [](auto& a, auto& b) { return a.first > b.first; });
+    // 装甲板右侧2点
+    vector<pair<float, cv::Point2f>> rightDist;
+    for (int i = 0; i < 4; i++) {
+        float d = cv::norm(rv[i] - armor.leftBar.rect.center);
+        rightDist.emplace_back(d, rv[i]);
+    }
+    sort(rightDist.begin(), rightDist.end(),
+        [](auto& a, auto& b) { return a.first > b.first; });
 
-    cv::Point2f leftVertices[4], rightVertices[4];
-    left.rect.points(leftVertices);
-    right.rect.points(rightVertices);
+    auto sortByY = [](cv::Point2f& a, cv::Point2f& b) {
+        if (a.y > b.y) std::swap(a, b);
+        };
 
-    // 找到左灯条最左侧的两个点
-    vector<cv::Point2f> leftPoints(leftVertices, leftVertices + 4);
-    sort(leftPoints.begin(), leftPoints.end(), // 迭代器   
-        [](const cv::Point2f& a, const cv::Point2f& b) {
-            return a.x < b.x;
-        });
+    sortByY(leftDist[0].second, leftDist[1].second);
+    sortByY(rightDist[0].second, rightDist[1].second);
 
-    // 找到右灯条最右侧的两个点
-    vector<cv::Point2f> rightPoints(rightVertices, rightVertices + 4);
-    sort(rightPoints.begin(), rightPoints.end(),
-        [](const cv::Point2f& a, const cv::Point2f& b) {
-            return a.x < b.x;
-        });
-
-    // 左灯条取x最小的两个点
-    // 右灯条取x最大的两个点
-    vector<cv::Point2f> leftOuter(2);
-    vector<cv::Point2f> rightOuter(2);
-
-    // 左灯条左侧两个点
-    leftOuter[0] = leftPoints[0];
-    leftOuter[1] = leftPoints[1];
-
-    // 右灯条右侧两个点
-    rightOuter[0] = rightPoints[2];
-    rightOuter[1] = rightPoints[3];
-
-    // 在每组内按y坐标排序（从上到下）
-    sort(leftOuter.begin(), leftOuter.end(),
-        [](const cv::Point2f& a, const cv::Point2f& b) {
-            return a.y < b.y;
-        });
-
-    sort(rightOuter.begin(), rightOuter.end(),
-        [](const cv::Point2f& a, const cv::Point2f& b) {
-            return a.y < b.y;
-        });
-
-    vertices[0] = leftOuter[0];    // 左上
-    vertices[1] = rightOuter[0];   // 右上
-    vertices[2] = rightOuter[1];   // 右下
-    vertices[3] = leftOuter[1];    // 左下
+    vertices[0] = leftDist[0].second;   // 左上
+    vertices[1] = rightDist[0].second;  // 右上
+    vertices[2] = rightDist[1].second;  // 右下
+    vertices[3] = leftDist[1].second;   // 左下
 }
 
 
@@ -186,16 +168,16 @@ void getArmorVertices(const ArmorPlate& armor, cv::Point2f vertices[4]) {
 int main() {
     JudgeInterface judge;
 
-    //HikCamera camera(0);
+    HikCamera camera(0);
 
     //cv::VideoCapture cap(0);
 
     //测试视频 蓝色装甲板
-    cv::VideoCapture camera("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
+    //cv::VideoCapture camera("D:/中北大学/卓创校内赛测试视频/BlueArmorPlus.mp4");
 
     //测试视频 红色装甲板
-    //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RedArmorPlus.mp4");
-    //cv::VideoCapture cap("D:/中北大学/卓创校内赛测试视频/RED.mp4");
+    //cv::VideoCapture camera("D:/Apps/QQ/QQChat/976465778/FileRecv/red.avi");
+    //cv::VideoCapture camera("D:/中北大学/卓创校内赛测试视频/test.mp4");
 
     // 检查摄像头
     if (!camera.isOpened()) {
@@ -252,14 +234,14 @@ int main() {
         camera >> frame;
 
         if (frame.empty()) {
-            std::cerr << "读取帧失败" << std::endl;
+            cerr << "读取帧失败" << std::endl;
             break;
         }
 
         /* 图像预处理 */
         originalClone = frame.clone();
         originalDrawing = frame.clone();
-        image = chooseBlue(originalClone);
+        image = chooseRed(originalClone);
         // 形态学处理
         kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
         // 闭运算
@@ -336,13 +318,13 @@ int main() {
             // 获取四个顶点
             cv::Point2f vertices[4];
             rect.points(vertices);
-            /*
+            
                 // 绘制旋转矩形
-                for (int i = 0; i < 4; i++) {
-                    cv::line(frame, vertices[i], vertices[(i + 1) % 4],
-                        cv::Scalar(0, 255, 0), 2);
-                }
-            */
+                //for (int i = 0; i < 4; i++) {
+                //    cv::line(frame, vertices[i], vertices[(i + 1) % 4],
+                //        cv::Scalar(0, 255, 0), 2);
+                //}
+            
             // 保留合理大小的轮廓
             LightBar lightBar(rect, lightColor);
             lightBars.push_back(lightBar);
@@ -410,6 +392,8 @@ int main() {
                 if (light3) {
                     continue;
                 }
+
+                /*
                 // 5.高度差 俩灯条y坐标差
                 centerYi = lightBars[i].center.y;
                 centerYj = lightBars[j].center.y;
@@ -419,6 +403,8 @@ int main() {
                 if (heightDiff > aveLength * 0.5) {
                     continue;
                 }
+                */
+
                 // 6.左右灯条颜色相同
                 if (lightBars[i].color != lightBars[j].color) {
                     continue;
